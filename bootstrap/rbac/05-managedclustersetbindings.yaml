@@ -1,0 +1,15 @@
+apiVersion: cluster.open-cluster-management.io/v1beta2
+kind: ManagedClusterSetBinding
+metadata:
+  name: mortgage
+  namespace: mortgage-gitops
+spec:
+  clusterSet: mortgage
+---
+apiVersion: cluster.open-cluster-management.io/v1beta2
+kind: ManagedClusterSetBinding
+metadata:
+  name: insurance
+  namespace: insurance-gitops
+spec:
+  clusterSet: insurance

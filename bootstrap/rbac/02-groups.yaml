@@ -1,0 +1,20 @@
+apiVersion: user.openshift.io/v1
+kind: Group
+metadata:
+  name: foundation-admins
+users:
+  - foundation-admin
+---
+apiVersion: user.openshift.io/v1
+kind: Group
+metadata:
+  name: mortgage-team
+users:
+  - mortgage-user
+---
+apiVersion: user.openshift.io/v1
+kind: Group
+metadata:
+  name: insurance-team
+users:
+  - insurance-user
