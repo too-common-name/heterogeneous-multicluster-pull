@@ -1,0 +1,67 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: openshift-gitops
+spec:
+  sourceNamespaces: []
+  destinations: []
+  clusterResourceWhitelist: []
+  sourceRepos: []
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: foundation
+  namespace: openshift-gitops
+spec:
+  sourceNamespaces:
+    - openshift-gitops
+  destinations:
+    - name: '*'
+      namespace: '*'
+      server: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  sourceRepos:
+    - '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: mortgage
+  namespace: openshift-gitops
+spec:
+  sourceNamespaces:
+    - mortgage-gitops
+  destinations:
+    - name: insolvency-check-sno
+      namespace: '*'
+      server: '*'
+    - name: kind-local
+      namespace: '*'
+      server: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  sourceRepos:
+    - '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: insurance
+  namespace: openshift-gitops
+spec:
+  sourceNamespaces:
+    - insurance-gitops
+  destinations:
+    - name: parasol-sno
+      namespace: '*'
+      server: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  sourceRepos:
+    - '*'

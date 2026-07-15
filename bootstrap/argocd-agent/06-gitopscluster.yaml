@@ -1,0 +1,24 @@
+apiVersion: apps.open-cluster-management.io/v1beta1
+kind: GitOpsCluster
+metadata:
+  name: gitops-agent-clusters
+  namespace: openshift-gitops
+spec:
+  argoServer:
+    argoNamespace: openshift-gitops
+  placementRef:
+    kind: Placement
+    apiVersion: cluster.open-cluster-management.io/v1beta1
+    name: all-managed-clusters
+    namespace: openshift-gitops
+  gitopsAddon:
+    enabled: true
+    argoCDAgent:
+      enabled: true
+      mode: managed
+      # On ACM 2.17+ the image is auto-populated from the ACM manifest.
+      # Only set argoCDAgent.image if ACM ships an older default than the
+      # installed GitOps operator (see README "Known Issue: ACM / GitOps
+      # Operator Version Mismatch").
+      serverAddress: openshift-gitops-agent-principal-openshift-gitops.apps.cluster-l4bnv.dynamic2.redhatworkshops.io
+      serverPort: "443"

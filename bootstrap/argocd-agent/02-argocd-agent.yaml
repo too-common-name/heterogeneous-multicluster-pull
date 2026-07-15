@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: openshift-gitops
+  namespace: openshift-gitops
+spec:
+  controller:
+    enabled: false
+  sourceNamespaces:
+    - '*'
+  rbac:
+    defaultPolicy: ''
+    policy: |
+      # Foundation team: full admin
+      g, foundation-admins, role:admin
+
+      # Mortgage team: access to mortgage AppProject only
+      p, role:mortgage, applications, *, mortgage/*, allow
+      p, role:mortgage, applicationsets, *, mortgage/*, allow
+      p, role:mortgage, logs, get, mortgage/*, allow
+      p, role:mortgage, exec, create, mortgage/*, allow
+      p, role:mortgage, projects, get, mortgage, allow
+      g, mortgage-team, role:mortgage
+
+      # Insurance team: access to insurance AppProject only
+      p, role:insurance, applications, *, insurance/*, allow
+      p, role:insurance, applicationsets, *, insurance/*, allow
+      p, role:insurance, logs, get, insurance/*, allow
+      p, role:insurance, exec, create, insurance/*, allow
+      p, role:insurance, projects, get, insurance, allow
+      g, insurance-team, role:insurance
+    scopes: '[groups]'
+  argoCDAgent:
+    principal:
+      enabled: true
+      destinationBasedMapping: true
+      auth: "mtls:CN=system:open-cluster-management:cluster:([^:]+):addon:gitops-addon:agent:gitops-addon-agent"
+      namespace:
+        allowedNamespaces:
+          - '*'
+      server:
+        route:
+          enabled: true
