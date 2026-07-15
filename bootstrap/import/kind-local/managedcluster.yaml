@@ -1,0 +1,36 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: kind-local
+  labels:
+    name: kind-local
+    cloud: Other
+    vendor: Other
+    cluster.open-cluster-management.io/clusterset: mortgage
+    platform: generic
+    team: mortgage
+  annotations: {}
+spec:
+  hubAcceptsClient: true
+---
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: kind-local
+  namespace: kind-local
+spec:
+  clusterName: kind-local
+  clusterNamespace: kind-local
+  clusterLabels:
+    name: kind-local
+    cloud: Other
+    vendor: Other
+    cluster.open-cluster-management.io/clusterset: mortgage
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true

@@ -1,0 +1,36 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: insolvency-check-sno
+  labels:
+    name: insolvency-check-sno
+    cloud: auto-detect
+    vendor: auto-detect
+    cluster.open-cluster-management.io/clusterset: mortgage
+    platform: ocp
+    team: mortgage
+  annotations: {}
+spec:
+  hubAcceptsClient: true
+---
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: insolvency-check-sno
+  namespace: insolvency-check-sno
+spec:
+  clusterName: insolvency-check-sno
+  clusterNamespace: insolvency-check-sno
+  clusterLabels:
+    name: insolvency-check-sno
+    cloud: auto-detect
+    vendor: auto-detect
+    cluster.open-cluster-management.io/clusterset: mortgage
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true

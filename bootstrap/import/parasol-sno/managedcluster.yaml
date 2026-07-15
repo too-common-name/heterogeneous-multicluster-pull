@@ -1,0 +1,36 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: parasol-sno
+  labels:
+    name: parasol-sno
+    cloud: auto-detect
+    vendor: auto-detect
+    cluster.open-cluster-management.io/clusterset: insurance
+    platform: ocp
+    team: insurance
+  annotations: {}
+spec:
+  hubAcceptsClient: true
+---
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: parasol-sno
+  namespace: parasol-sno
+spec:
+  clusterName: parasol-sno
+  clusterNamespace: parasol-sno
+  clusterLabels:
+    name: parasol-sno
+    cloud: auto-detect
+    vendor: auto-detect
+    cluster.open-cluster-management.io/clusterset: insurance
+  applicationManager:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+  certPolicyController:
+    enabled: true
