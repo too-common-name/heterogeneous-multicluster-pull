@@ -246,9 +246,13 @@ oc apply -f bootstrap/rbac/04-team-namespaces.yaml
 # ManagedClusterSetBindings (must be applied after namespaces exist)
 oc apply -f bootstrap/rbac/05-managedclustersetbindings.yaml
 
-# Team role bindings (namespace admin + MCS admin + cluster namespace access)
+# Team role bindings (gitops namespace admin + MCS view)
 oc apply -f bootstrap/rbac/06-team-rolebindings.yaml
 ```
+
+> **Note**: `07-cluster-ns-secret-reader.yaml` is applied in step 3 — it
+> references cluster namespaces that ACM creates when ManagedCluster resources
+> are applied. For RBAC verification, see [step 5](#5-verify-rbac-scoping-after-import).
 
 ### 3. Apply bootstrap manifests on the hub (foundation-admin does this)
 
@@ -265,7 +269,13 @@ oc apply -f bootstrap/managedclustersets/insurance.yaml
 oc apply -f bootstrap/import/insolvency-check-sno/managedcluster.yaml
 oc apply -f bootstrap/import/parasol-sno/managedcluster.yaml
 oc apply -f bootstrap/import/kind-local/managedcluster.yaml
+
+# Now apply the secret-reader bindings (cluster namespaces exist after the above)
+oc apply -f bootstrap/rbac/07-cluster-ns-secret-reader.yaml
 ```
+
+> This completes RBAC setup from step 2c. For verification, see
+> [step 5](#5-verify-rbac-scoping-after-import).
 
 ### 4. Team members: extract import secrets and apply on spokes
 
@@ -316,10 +326,13 @@ oc apply -f /tmp/parasol-sno-crds.yaml
 oc apply -f /tmp/parasol-sno-import.yaml
 ```
 
-### 5. Verify RBAC scoping
+### 5. Verify RBAC scoping (after import)
 
-> **TODO**: automate this as a test script (e.g. `scripts/verify-rbac.sh`) using
-> `oc auth can-i` assertions or a BATS test suite.
+> This step requires clusters to be imported (step 4) so that import secrets
+> exist and `clusterview` returns results.
+>
+> **TODO**: automate as `scripts/verify-rbac.sh` using `oc auth can-i` assertions
+> or a BATS test suite.
 
 Scoped users cannot `oc get managedclusters` (cluster-scope list). ACM provides the
 `clusterview` API that respects ManagedClusterSet boundaries:
@@ -524,5 +537,12 @@ oc get managedclusteraddon gitops-addon -n insolvency-check-sno \
   -o jsonpath='{.status.conditions[?(@.type=="Available")].status}'
 # Expected: True  (repeat for parasol-sno, kind-local)
 ```
+
+> **ArgoCD UI note**: in the ArgoCD web console, spoke clusters will appear in
+> Settings → Clusters but **without a connection status or version** — only
+> `in-cluster` shows "Successful". This is expected in Agent mode: the hub
+> doesn't probe spokes (there is no hub→spoke path). The agent on each spoke
+> pulls from the principal; actual connectivity is confirmed by
+> `ManagedClusterAddOn Available: True` and by successful Application syncs.
 
 
