@@ -431,6 +431,77 @@ but the spoke fetches the actual source and generates the final manifests. This
 is a key difference from push mode where the hub's Repo Server does the
 rendering.
 
+#### Spoke-side service accounts and privileges
+
+Neither ArgoCD nor ACM on the hub has credentials to the spoke clusters. Both
+paths are pull-based: spoke-side agents initiate the connection, download their
+work items, and apply them locally with their own service accounts.
+
+| Component | Who initiates | Spoke SA | Privileges |
+|-----------|--------------|----------|------------|
+| ArgoCD Agent | Spoke → hub principal (mTLS) | `acm-openshift-gitops-agent-agent` | Minimal: `applications` CRUD + `namespaces` list |
+| ArgoCD App Controller | _(local, no connection)_ | `acm-openshift-gitops-argocd-application-controller` | Broad read + write on many API groups, **scoped by AppProjects** |
+| ACM config-policy-controller | Klusterlet → hub (client cert) | `config-policy-controller-sa` | `["*"]["*"]["*"]` — full cluster access |
+| ACM governance-policy-framework | Klusterlet → hub (client cert) | `governance-policy-framework-sa` | Scoped (see below) |
+
+**No hub → spoke credentials exist.** On the hub, ArgoCD cluster secrets point
+to the local principal resource proxy (`svc:9090?agentName=<cluster>`), not to
+spoke API servers.
+
+**ArgoCD Agent** only pulls Application specs from the hub and writes them as
+local Application CRs. The **App Controller** reads those CRs and syncs
+manifests to the cluster — it has broad Kubernetes RBAC but AppProjects enforce
+destination and resource restrictions at the application level.
+
+**config-policy-controller** has full cluster access (`["*"]["*"]["*"]`) because
+it enforces ConfigurationPolicy and OperatorPolicy — it must be able to
+create/modify arbitrary resources (Subscriptions, CRDs, Deployments, etc.).
+
+**governance-policy-framework** is the orchestrator — it watches policies,
+evaluates compliance, and delegates enforcement to specialized controllers
+(`config-policy-controller`, `cert-policy-controller`). It does not apply
+arbitrary resources itself, so its RBAC is deliberately scoped:
+
+| Binding | Scope | Permissions |
+|---------|-------|-------------|
+| ClusterRole `open-cluster-management:governance-policy-framework` | Cluster-wide | Read webhooks, CRDs; CRUD Gatekeeper constraints/templates; get/patch deployments |
+| Role in `<cluster>` NS (e.g. `kind-local`) | Namespace | CRUD on `policy.open-cluster-management.io/*`, events, secrets |
+| Role `governance-policy-framework-leader` | `open-cluster-management-agent-addon` | Leader election (leases, events) |
+
+On the hub, ArgoCD cluster secrets point to the **local principal resource proxy**
+(`openshift-gitops-agent-principal-resource-proxy.openshift-gitops.svc:9090?agentName=<cluster>`),
+not to the spoke API servers. The hub never reaches a spoke directly.
+
+**Verification** (run on a spoke):
+
+```bash
+# ArgoCD Agent SA (minimal — only apps + namespaces)
+oc get clusterrole acm-openshift-gitops-openshift-gitops-agent-agent \
+  -o jsonpath='{range .rules[*]}{.apiGroups} {.resources} {.verbs}{"\n"}{end}'
+# Expected: [""] ["namespaces"] ["list","watch"]
+#           ["argoproj.io"] ["applications"] ["create","get","list","watch","update","delete","patch"]
+
+# ArgoCD App Controller SA (broad — scoped by AppProjects at app level)
+oc get clusterrole acm-openshift-gitops-openshift-gitops-argocd-application-controller \
+  -o jsonpath='{range .rules[*]}{.apiGroups} {.resources} {.verbs}{"\n"}{end}'
+# Expected: ["*"] ["*"] ["get","list","watch"] + write on operators, rbac, namespaces, etc.
+
+# config-policy-controller (full cluster access)
+oc get clusterrole open-cluster-management:config-policy-controller \
+  -o jsonpath='{.rules[0].apiGroups} {.rules[0].resources} {.rules[0].verbs}'
+# Expected: ["*"] ["*"] ["*"]
+
+# governance-policy-framework (scoped — orchestrator only)
+oc get clusterrolebinding -o wide | grep governance-policy
+oc get rolebinding -A -o wide | grep governance-policy
+
+# Hub: confirm cluster secrets point to local proxy, not to spoke APIs
+oc --context hub get secrets -n openshift-gitops \
+  -l argocd.argoproj.io/secret-type=cluster \
+  -o custom-columns='NAME:.metadata.name' --no-headers
+# Decode the server field — should show svc:9090?agentName=..., not api.<spoke>:6443
+```
+
 #### Per-team AppProjects
 
 Instead of a single wildcard `default` AppProject, we create per-team projects
