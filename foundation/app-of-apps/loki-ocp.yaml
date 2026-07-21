@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-ocp
+  namespace: openshift-gitops
+spec:
+  project: foundation
+  source:
+    repoURL: https://github.com/too-common-name/heterogeneous-multicluster-pull.git
+    targetRevision: main
+    path: foundation/operators/loki/ocp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshift-gitops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
