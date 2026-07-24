@@ -1,0 +1,19 @@
+operatorName: loki-operator
+operatorNamespace: openshift-operators-redhat
+installPolicyName: loki-operator-install
+placementRef: platform-ocp
+configPolicyNames:
+  - loki-operator-config
+policyNamespace: openshift-gitops
+remediationAction: enforce
+severity: medium
+source: redhat-operators
+sourceNamespace: openshift-marketplace
+installPlanApproval: Automatic
+
+lokiStack:
+  size: 1x.demo
+  secretName: loki-s3
+  storageClassName: gp3-csi
+  schemaVersion: v13
+  schemaDate: "2024-10-01"

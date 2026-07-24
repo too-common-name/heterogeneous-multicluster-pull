@@ -1,0 +1,5 @@
+apiVersion: v2
+name: acm-operator-policy
+description: Library chart — reusable ACM OperatorPolicy + PlacementBinding templates
+type: library
+version: 0.1.0

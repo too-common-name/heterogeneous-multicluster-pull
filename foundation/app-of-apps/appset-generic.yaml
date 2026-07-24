@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: foundation-generic-operators
+  namespace: openshift-gitops
+spec:
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/too-common-name/heterogeneous-multicluster-pull.git
+              revision: main
+              files:
+                - path: foundation/operators/*/generic/appset-config.json
+          - clusterDecisionResource:
+              configMapRef: acm-placement
+              labelSelector:
+                matchLabels:
+                  cluster.open-cluster-management.io/placement: platform-generic
+              requeueAfterSeconds: 180
+  template:
+    metadata:
+      name: '{{operator}}-{{name}}'
+    spec:
+      project: foundation
+      sources:
+        - repoURL: '{{chartRepo}}'
+          chart: '{{chartName}}'
+          targetRevision: '{{chartVersion}}'
+          helm:
+            valueFiles:
+              - $values/foundation/operators/{{operator}}/generic/values.yaml
+        - repoURL: https://github.com/too-common-name/heterogeneous-multicluster-pull.git
+          targetRevision: main
+          ref: values
+      destination:
+        server: '{{server}}'
+        namespace: '{{namespace}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

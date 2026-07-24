@@ -1,0 +1,15 @@
+# Reference only — library values.yaml is not merged into parent charts.
+# Each operator chart must set all of these explicitly.
+#
+# operatorName: ""
+# operatorNamespace: ""
+# installPolicyName: ""
+# policyNamespace: ""
+# remediationAction: ""
+# severity: ""
+# source: ""
+# sourceNamespace: ""
+# installPlanApproval: ""
+# placementRef: ""
+# configPolicyNames: []
+# placementMatchExpressions: []   (only if placementRef is empty)

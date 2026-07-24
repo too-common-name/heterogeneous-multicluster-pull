@@ -1,0 +1,8 @@
+apiVersion: v2
+name: loki-ocp
+description: Loki Operator + LokiStack for OCP clusters
+version: 0.1.0
+dependencies:
+  - name: acm-operator-policy
+    version: 0.1.0
+    repository: file://../../../../charts/acm-operator-policy

@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: foundation-ocp-operators
+  namespace: openshift-gitops
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/too-common-name/heterogeneous-multicluster-pull.git
+        revision: main
+        files:
+          - path: foundation/operators/*/ocp/appset-config.json
+  template:
+    metadata:
+      name: '{{operator}}-ocp'
+    spec:
+      project: foundation
+      source:
+        repoURL: https://github.com/too-common-name/heterogeneous-multicluster-pull.git
+        targetRevision: main
+        path: 'foundation/operators/{{operator}}/ocp'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: openshift-gitops
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

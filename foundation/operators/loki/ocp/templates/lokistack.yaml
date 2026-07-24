@@ -1,0 +1,37 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: {{ .Values.configPolicyNames | first }}
+  namespace: {{ .Values.policyNamespace }}
+spec:
+  remediationAction: {{ .Values.remediationAction }}
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: lokistack
+        spec:
+          remediationAction: {{ .Values.remediationAction }}
+          severity: {{ .Values.severity }}
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: loki.grafana.com/v1
+                kind: LokiStack
+                metadata:
+                  name: logging-loki
+                  namespace: openshift-logging
+                spec:
+                  size: {{ .Values.lokiStack.size }}
+                  storage:
+                    schemas:
+                      - version: {{ .Values.lokiStack.schemaVersion }}
+                        effectiveDate: {{ .Values.lokiStack.schemaDate | quote }}
+                    secret:
+                      name: {{ .Values.lokiStack.secretName }}
+                      type: s3
+                  storageClassName: {{ .Values.lokiStack.storageClassName }}
+                  tenants:
+                    mode: openshift-logging

@@ -3,3 +3,11 @@
 credentials/
 *.secret
 
+# S3 secrets (contains AWS credentials — do not push)
+foundation/operators/loki/s3-policy/
+foundation/operators/tempo/s3-policy/
+
+# Helm dependency artifacts
+Chart.lock
+**/charts/*.tgz
+

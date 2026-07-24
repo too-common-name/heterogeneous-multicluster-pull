@@ -1,0 +1,7 @@
+{
+  "operator": "loki",
+  "chartRepo": "https://grafana.github.io/helm-charts",
+  "chartName": "loki",
+  "chartVersion": "6.x",
+  "namespace": "loki"
+}
