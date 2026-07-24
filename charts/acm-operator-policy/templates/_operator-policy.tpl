@@ -16,13 +16,13 @@ spec:
         spec:
           remediationAction: {{ .Values.remediationAction }}
           complianceType: musthave
+          upgradeApproval: {{ .Values.installPlanApproval }}
           severity: {{ .Values.severity }}
           subscription:
             name: {{ .Values.operatorName }}
             namespace: {{ .Values.operatorNamespace }}
             source: {{ .Values.source }}
             sourceNamespace: {{ .Values.sourceNamespace }}
-            installPlanApproval: {{ .Values.installPlanApproval }}
 {{- end }}
 
 {{- define "acm-operator-policy.placementBinding" -}}
