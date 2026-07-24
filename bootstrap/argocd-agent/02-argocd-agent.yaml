@@ -5,7 +5,7 @@ metadata:
   namespace: openshift-gitops
 spec:
   controller:
-    enabled: false
+    enabled: true
   sourceNamespaces:
     - '*'
   rbac:
