@@ -9,6 +9,7 @@ remediationAction: enforce
 severity: medium
 source: redhat-operators
 sourceNamespace: openshift-marketplace
+channel: stable-6.6
 installPlanApproval: Automatic
 
 lokiStack:

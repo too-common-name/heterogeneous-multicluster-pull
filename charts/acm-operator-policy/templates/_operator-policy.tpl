@@ -23,6 +23,9 @@ spec:
             namespace: {{ .Values.operatorNamespace }}
             source: {{ .Values.source }}
             sourceNamespace: {{ .Values.sourceNamespace }}
+            {{- if .Values.channel }}
+            channel: {{ .Values.channel }}
+            {{- end }}
 {{- end }}
 
 {{- define "acm-operator-policy.placementBinding" -}}
