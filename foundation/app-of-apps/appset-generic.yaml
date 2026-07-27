@@ -34,7 +34,7 @@ spec:
           targetRevision: main
           ref: values
       destination:
-        server: '{{server}}'
+        name: '{{name}}'
         namespace: '{{namespace}}'
       syncPolicy:
         automated:
