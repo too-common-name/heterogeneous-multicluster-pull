@@ -405,7 +405,7 @@ the hub over mTLS — no hub-to-spoke connectivity required.
 Hub (openshift-gitops)                     Spoke (openshift-gitops)
 ┌──────────────────────────┐               ┌──────────────────────┐
 │  Agent Principal         │◄──── mTLS ────│  ArgoCD Agent        │
-│  (no controller)         │               │  (pulls apps, syncs) │
+│  App Controller (3)      │               │  (pulls apps, syncs) │
 │                          │               │                      │
 │  AppProjects:            │  propagated   │  Local AppProject    │
 │   - foundation           │──────────────►│  mirror              │
@@ -418,6 +418,12 @@ Hub (openshift-gitops)                     Spoke (openshift-gitops)
 │   insurance-gitops)      │
 └──────────────────────────┘
 ```
+
+**(3) Hub App Controller**: enabled (`controller.enabled: true`) to reconcile
+hub-targeted Applications (e.g. `foundation-bootstrap`, `loki-ocp` which deploy
+ACM policies to the hub). Agent-managed cluster secrets are annotated with
+`argocd.argoproj.io/skip-reconcile: "true"` (via `07-skip-reconcile-policy.yaml`)
+so the hub controller ignores them — the spoke agents handle those Applications.
 
 **(1) App Controller**: the spoke has its own Application Controller because
 the actual **sync** (applying manifests to the cluster) happens locally on the
@@ -437,10 +443,12 @@ Neither ArgoCD nor ACM on the hub has credentials to the spoke clusters. Both
 paths are pull-based: spoke-side agents initiate the connection, download their
 work items, and apply them locally with their own service accounts.
 
+ACM deploys the same RBAC structure on every spoke (OCP and non-OCP alike):
+
 | Component | Who initiates | Spoke SA | Privileges |
 |-----------|--------------|----------|------------|
 | ArgoCD Agent | Spoke → hub principal (mTLS) | `acm-openshift-gitops-agent-agent` | Minimal: `applications` CRUD + `namespaces` list |
-| ArgoCD App Controller | _(local, no connection)_ | `acm-openshift-gitops-argocd-application-controller` | Broad read + write on many API groups, **scoped by AppProjects** |
+| ArgoCD App Controller | _(local, no connection)_ | `acm-openshift-gitops-argocd-application-controller` | Read-only cluster-wide + write in `openshift-gitops` only (see details below) |
 | ACM config-policy-controller | Klusterlet → hub (client cert) | `config-policy-controller-sa` | `["*"]["*"]["*"]` — full cluster access |
 | ACM governance-policy-framework | Klusterlet → hub (client cert) | `governance-policy-framework-sa` | Scoped (see below) |
 
@@ -448,19 +456,57 @@ work items, and apply them locally with their own service accounts.
 to the local principal resource proxy (`svc:9090?agentName=<cluster>`), not to
 spoke API servers.
 
-**ArgoCD Agent** only pulls Application specs from the hub and writes them as
-local Application CRs. The **App Controller** reads those CRs and syncs
-manifests to the cluster — it has broad Kubernetes RBAC but AppProjects enforce
-destination and resource restrictions at the application level.
+##### ArgoCD Agent
 
-**config-policy-controller** has full cluster access (`["*"]["*"]["*"]`) because
-it enforces ConfigurationPolicy and OperatorPolicy — it must be able to
-create/modify arbitrary resources (Subscriptions, CRDs, Deployments, etc.).
+Only pulls Application specs from the hub and writes them as local Application
+CRs. Minimal RBAC — cluster-wide namespace listing and ArgoCD Application CRUD.
 
-**governance-policy-framework** is the orchestrator — it watches policies,
-evaluates compliance, and delegates enforcement to specialized controllers
-(`config-policy-controller`, `cert-policy-controller`). It does not apply
-arbitrary resources itself, so its RBAC is deliberately scoped:
+##### ArgoCD App Controller — the RBAC gap
+
+The App Controller has **two layers** of RBAC deployed by ACM:
+
+**ClusterRole** (cluster-wide):
+
+| apiGroups | resources | verbs | Notes |
+|-----------|-----------|-------|-------|
+| `*` | `*` | `get, list, watch` | Read-only for everything |
+| `operators.coreos.com` | `*` | `*` | OLM (only exists on OCP) |
+| `operator.openshift.io`, `config.openshift.io`, `console.openshift.io`, `user.openshift.io` | `*` | `*` | OCP-specific groups |
+| `""` | `namespaces, PVCs, PVs, configmaps` | `*` | Infrastructure primitives |
+| `rbac.authorization.k8s.io` | `*` | `*` | RBAC management |
+| `storage.k8s.io` | `*` | `*` | Storage |
+
+**Namespace Role** (only in `openshift-gitops`):
+
+| apiGroups | resources | verbs |
+|-----------|-----------|-------|
+| `apps` | `deployments, statefulsets, daemonsets, replicasets` | full CRUD |
+| `""` | `services, serviceaccounts, configmaps, secrets, pods` | full CRUD |
+| `batch` | `jobs, cronjobs` | full CRUD |
+| `networking.k8s.io` | `ingresses, networkpolicies` | full CRUD |
+| `argoproj.io` | `applications, appprojects, argocds` | `*` |
+
+**The gap**: the controller can create Deployments, Services, etc. **only in
+`openshift-gitops`**. It cannot write workload resources in other namespaces
+(e.g. `loki`).
+To fix this,
+we deploy a supplemental ClusterRole via a ConfigurationPolicy
+(`08-agent-controller-rbac-policy.yaml`) that grants write access for
+workload resources cluster-wide (can be more restrictive). The ACM addon manager reverts changes to
+its own ClusterRole, so the supplemental role must be a separate resource.
+
+##### config-policy-controller
+
+Full cluster access (`["*"]["*"]["*"]`) because it enforces ConfigurationPolicy
+and OperatorPolicy — it must be able to create/modify arbitrary resources
+(Subscriptions, CRDs, Deployments, etc.).
+
+##### governance-policy-framework
+
+The orchestrator — it watches policies, evaluates compliance, and delegates
+enforcement to specialized controllers (`config-policy-controller`,
+`cert-policy-controller`). It does not apply arbitrary resources itself, so
+its RBAC is deliberately scoped:
 
 | Binding | Scope | Permissions |
 |---------|-------|-------------|
@@ -468,23 +514,20 @@ arbitrary resources itself, so its RBAC is deliberately scoped:
 | Role in `<cluster>` NS (e.g. `kind-local`) | Namespace | CRUD on `policy.open-cluster-management.io/*`, events, secrets |
 | Role `governance-policy-framework-leader` | `open-cluster-management-agent-addon` | Leader election (leases, events) |
 
-On the hub, ArgoCD cluster secrets point to the **local principal resource proxy**
-(`openshift-gitops-agent-principal-resource-proxy.openshift-gitops.svc:9090?agentName=<cluster>`),
-not to the spoke API servers. The hub never reaches a spoke directly.
-
-**Verification** (run on a spoke):
+##### Verification (run on a spoke)
 
 ```bash
 # ArgoCD Agent SA (minimal — only apps + namespaces)
 oc get clusterrole acm-openshift-gitops-openshift-gitops-agent-agent \
   -o jsonpath='{range .rules[*]}{.apiGroups} {.resources} {.verbs}{"\n"}{end}'
-# Expected: [""] ["namespaces"] ["list","watch"]
-#           ["argoproj.io"] ["applications"] ["create","get","list","watch","update","delete","patch"]
 
-# ArgoCD App Controller SA (broad — scoped by AppProjects at app level)
+# ArgoCD App Controller — ClusterRole (read-only for most resources)
 oc get clusterrole acm-openshift-gitops-openshift-gitops-argocd-application-controller \
   -o jsonpath='{range .rules[*]}{.apiGroups} {.resources} {.verbs}{"\n"}{end}'
-# Expected: ["*"] ["*"] ["get","list","watch"] + write on operators, rbac, namespaces, etc.
+
+# ArgoCD App Controller — Namespace Role (write only in openshift-gitops)
+oc get role acm-openshift-gitops-argocd-application-controller -n openshift-gitops \
+  -o jsonpath='{range .rules[*]}{.apiGroups} {.resources} {.verbs}{"\n"}{end}'
 
 # config-policy-controller (full cluster access)
 oc get clusterrole open-cluster-management:config-policy-controller \
@@ -496,10 +539,9 @@ oc get clusterrolebinding -o wide | grep governance-policy
 oc get rolebinding -A -o wide | grep governance-policy
 
 # Hub: confirm cluster secrets point to local proxy, not to spoke APIs
-oc --context hub get secrets -n openshift-gitops \
+oc get secrets -n openshift-gitops \
   -l argocd.argoproj.io/secret-type=cluster \
-  -o custom-columns='NAME:.metadata.name' --no-headers
-# Decode the server field — should show svc:9090?agentName=..., not api.<spoke>:6443
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.data.server | @base64d}{"\n"}{end}'
 ```
 
 #### Per-team AppProjects

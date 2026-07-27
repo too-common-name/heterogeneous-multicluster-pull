@@ -1,0 +1,90 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: agent-controller-workload-rbac
+  namespace: openshift-gitops
+spec:
+  remediationAction: enforce
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: agent-controller-workload-rbac
+        spec:
+          remediationAction: enforce
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRole
+                metadata:
+                  name: argocd-application-controller-workload
+                rules:
+                  - apiGroups: [""]
+                    resources:
+                      - configmaps
+                      - endpoints
+                      - events
+                      - persistentvolumeclaims
+                      - pods
+                      - replicationcontrollers
+                      - secrets
+                      - serviceaccounts
+                      - services
+                    verbs: ["*"]
+                  - apiGroups: ["apps"]
+                    resources:
+                      - daemonsets
+                      - deployments
+                      - replicasets
+                      - statefulsets
+                    verbs: ["*"]
+                  - apiGroups: ["batch"]
+                    resources:
+                      - cronjobs
+                      - jobs
+                    verbs: ["*"]
+                  - apiGroups: ["networking.k8s.io"]
+                    resources:
+                      - ingresses
+                      - networkpolicies
+                    verbs: ["*"]
+                  - apiGroups: ["policy"]
+                    resources:
+                      - poddisruptionbudgets
+                    verbs: ["*"]
+                  - apiGroups: ["autoscaling"]
+                    resources:
+                      - horizontalpodautoscalers
+                    verbs: ["*"]
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: argocd-application-controller-workload
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: argocd-application-controller-workload
+                subjects:
+                  - kind: ServiceAccount
+                    name: acm-openshift-gitops-argocd-application-controller
+                    namespace: openshift-gitops
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: agent-controller-workload-rbac-binding
+  namespace: openshift-gitops
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: all-managed-clusters
+subjects:
+  - apiGroup: policy.open-cluster-management.io
+    kind: Policy
+    name: agent-controller-workload-rbac
