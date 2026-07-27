@@ -48,53 +48,33 @@ The fleet includes both OCP and non-OCP clusters, distinguished by **labels**:
 
 ### Operator Delivery
 
-On **non-OCP clusters**, operators are delivered via **upstream Helm charts** — the
-only portable option. On **OCP clusters**, Red Hat certified operators should be
-installed through **OLM** (`Subscription` + `OperatorGroup`) to preserve Red Hat
-support coverage and automatic update channels.
+The `platform` label determines the delivery mechanism, not just conditional
+configuration. OLM and `OperatorPolicy` only exist on OCP, so the fleet
+requires two paths:
 
-This creates a **platform-driven split**: the `platform` label determines the
-delivery mechanism, not just conditional configuration.
+![Operator Delivery Flow](diagrams/out/operator_delivery.png)
 
-Two approaches are under evaluation:
+| Path | Clusters | Mechanism | Who syncs |
+|------|----------|-----------|-----------|
+| **OCP** | `platform=ocp` | Helm library chart renders ACM `OperatorPolicy` + `ConfigurationPolicy` on the hub; ACM's `config-policy-controller` enforces them on spokes | Hub App Controller (ArgoCD) + ACM governance |
+| **Generic** | `platform=generic` | Upstream community Helm chart deployed directly to spoke via ArgoCD Agent | Spoke App Controller (ArgoCD Agent) |
 
-#### Approach A — ArgoCD manages everything
+**Why this split**: `OperatorPolicy` is OLM-aware — it tracks the full
+Subscription → InstallPlan → CSV → Deployment pipeline and reports compliance
+to the ACM governance dashboard. Raw YAML cannot do this. On non-OCP clusters,
+OLM doesn't exist, so operators are deployed as standard Helm releases.
 
-ArgoCD ApplicationSets use two generators with different Placement rules:
+A reusable **library chart** (`charts/acm-operator-policy/`) encapsulates the
+Policy + PlacementBinding + optional Placement boilerplate. Each OCP operator
+chart includes the library with a single `{{ include "acm-operator-policy.all" . }}`
+line and adds operator-specific ConfigurationPolicies (e.g. `LokiStack`).
 
-| Generator target | Chart content | Who manages the operator? |
-|------------------|---------------|--------------------------|
-| `platform=ocp` | Thin Helm chart wrapping `Subscription` + `OperatorGroup` | OLM (ArgoCD just deploys the intent) |
-| `platform=generic` | Upstream community Helm chart | ArgoCD directly |
+Two **ApplicationSets** auto-discover operators from the Git repo — no manual
+Application YAML needed when onboarding new operators.
 
-- **Pro**: single tool (ArgoCD) for all operator delivery
-- **Pro**: one reusable "OLM wrapper" Helm chart with per-operator `values.yaml`
-- **Con**: no native compliance dashboard (but ArgoCD
-  [custom health checks](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/#custom-health-checks)
-  can be configured to evaluate CSV status and operator pod health)
-
-#### Approach B — Split by concern
-
-| Concern | Tool | Applied on | Takes effect on |
-|---------|------|------------|-----------------|
-| Foundation operators (OCP) | ACM `PolicyGenerator` → `OperatorPolicy` | Hub | OCP spokes |
-| Foundation operators (non-OCP) | ArgoCD ApplicationSet + upstream Helm | Hub | Non-OCP spokes |
-| Application workloads | ArgoCD ApplicationSets | Hub | All spokes |
-
-- **Pro**: `OperatorPolicy` is OLM-aware — reports operator health, version, and
-  upgrade status to the ACM governance dashboard
-- **Pro**: compliance visibility — "cert-manager installed and healthy on 100% of
-  OCP clusters"
-- **Con**: foundation team must use two tools — ACM governance for OCP, ArgoCD for
-  non-OCP — since `OperatorPolicy` doesn't work without OLM
-- **Con**: two delivery channels to maintain for foundation operators
-
-#### Common to both approaches
-
-- **Application workloads** always go through ArgoCD ApplicationSets
-- The `platform` label drives which path targets which clusters
-- On OCP, the operator lifecycle (updates, approvals) is managed by OLM regardless
-  of which approach delivers the `Subscription`
+For the full rationale (OLM concepts, OperatorPolicy vs raw YAML, library chart
+design, placement strategy, AppSet auto-discovery, onboarding steps), see
+[docs/operator-delivery.md](docs/operator-delivery.md).
 
 ## Organizational Model
 
@@ -401,41 +381,27 @@ the hub over mTLS — no hub-to-spoke connectivity required.
 
 #### Architecture
 
-```
-Hub (openshift-gitops)                     Spoke (openshift-gitops)
-┌──────────────────────────┐               ┌──────────────────────┐
-│  Agent Principal         │◄──── mTLS ────│  ArgoCD Agent        │
-│  App Controller (3)      │               │  (pulls apps, syncs) │
-│                          │               │                      │
-│  AppProjects:            │  propagated   │  Local AppProject    │
-│   - foundation           │──────────────►│  mirror              │
-│   - mortgage             │               │                      │
-│   - insurance            │               │  App Controller (1)  │
-│                          │               │  Repo Server    (2)  │
-│  ApplicationSets         │               │  Redis               │
-│  (openshift-gitops,      │               └──────────────────────┘
-│   mortgage-gitops,       │
-│   insurance-gitops)      │
-└──────────────────────────┘
-```
+![ArgoCD Agent Architecture](diagrams/out/argocd_agent.png)
 
-**(3) Hub App Controller**: enabled (`controller.enabled: true`) to reconcile
-hub-targeted Applications (e.g. `foundation-bootstrap`, `loki-ocp` which deploy
-ACM policies to the hub). Agent-managed cluster secrets are annotated with
-`argocd.argoproj.io/skip-reconcile: "true"` (via `07-skip-reconcile-policy.yaml`)
-so the hub controller ignores them — the spoke agents handle those Applications.
+The hub runs in **hybrid mode** (`controller.enabled: true`):
 
-**(1) App Controller**: the spoke has its own Application Controller because
-the actual **sync** (applying manifests to the cluster) happens locally on the
-spoke. The hub only defines *what* to deploy (Application specs); the spoke
-decides *when* and *how* to apply it.
+- **Agent Principal** receives mTLS connections from spoke agents and routes
+  Applications to the correct agent based on `destination.name`.
+- **Hub App Controller** reconciles hub-targeted Applications (e.g.
+  `foundation-bootstrap`, `loki-ocp` which deploy ACM policies to the hub).
+  Agent-managed cluster secrets are annotated with
+  `argocd.argoproj.io/skip-reconcile: "true"` (via `07-skip-reconcile-policy.yaml`)
+  so the hub controller ignores them — the spoke agents handle those Applications.
+- **ApplicationSets** auto-discover operators from Git: `foundation-ocp-operators`
+  generates hub-targeted apps (rendered as ACM Policies), `foundation-generic-operators`
+  generates agent-routed apps (deployed directly on spokes via upstream Helm).
+- **AppProjects** (`foundation`, `mortgage`, `insurance`) are propagated to every
+  spoke agent, which enforces destination and source restrictions locally.
 
-**(2) Repo Server**: the spoke needs its own Repo Server because it clones the
-Git repositories and renders Helm charts / Kustomize overlays **locally**. The
-hub propagates Application definitions (which repo, which path, which chart),
-but the spoke fetches the actual source and generates the final manifests. This
-is a key difference from push mode where the hub's Repo Server does the
-rendering.
+Each spoke has its own **App Controller** (sync happens locally — the hub only
+defines *what* to deploy, the spoke decides *when* and *how*) and **Repo Server**
+(clones Git repos and renders Helm charts locally — a key difference from push
+mode where the hub does the rendering).
 
 #### Spoke-side service accounts and privileges
 
