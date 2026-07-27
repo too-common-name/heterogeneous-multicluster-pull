@@ -1,0 +1,25 @@
+# EXPECTED: REJECTED by block-team-foundation-ops
+# A team tries to remove a foundation operator via OperatorPolicy
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: test-attack-operator
+  namespace: mortgage-gitops
+spec:
+  remediationAction: enforce
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1beta1
+        kind: OperatorPolicy
+        metadata:
+          name: remove-loki
+        spec:
+          remediationAction: enforce
+          complianceType: mustnothave
+          severity: low
+          subscription:
+            name: loki-operator
+            namespace: openshift-operators-redhat
+            source: redhat-operators
+            sourceNamespace: openshift-marketplace

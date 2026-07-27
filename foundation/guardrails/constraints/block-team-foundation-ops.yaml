@@ -1,0 +1,16 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sBlockFoundationOperators
+metadata:
+  name: block-team-foundation-ops
+spec:
+  match:
+    kinds:
+      - apiGroups: ["policy.open-cluster-management.io"]
+        kinds: ["Policy"]
+    namespaces:
+      - mortgage-gitops
+      - insurance-gitops
+  parameters:
+    protectedOperators:
+      - loki-operator
+      - tempo-operator

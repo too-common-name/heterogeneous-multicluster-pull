@@ -1,0 +1,29 @@
+# EXPECTED: REJECTED by block-team-foundation-ns
+# A team tries to create a ConfigurationPolicy targeting openshift-logging
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: test-attack-ns
+  namespace: mortgage-gitops
+spec:
+  remediationAction: enforce
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: test-attack-ns
+        spec:
+          remediationAction: enforce
+          severity: low
+          namespaceSelector:
+            include:
+              - openshift-logging
+          object-templates:
+            - complianceType: mustnothave
+              objectDefinition:
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                  name: attack

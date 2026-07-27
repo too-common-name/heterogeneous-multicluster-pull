@@ -94,10 +94,14 @@ design, placement strategy, AppSet auto-discovery, onboarding steps), see
 - **Responsibilities**:
   - Application-specific operators and workloads
   - Team-scoped policies within their namespaces
-- **Constraints**:
-  - Cannot create policies that target foundation-managed namespaces
-  - Cannot modify or disable foundation operators
-  - Cannot create policies with higher priority than foundation policies
+- **Guardrails** (enforced by Gatekeeper on the hub):
+  - **Namespace protection**: cannot create ACM Policies or ArgoCD Applications
+    that target foundation-managed namespaces (`openshift-*`,
+    `open-cluster-management*`, `kube-system`, `openshift-gitops`, and any
+    namespace created by foundation operators like `loki`, `openshift-logging`)
+  - **Foundation operator protection**: cannot create ConfigurationPolicies that
+    reference foundation operator Subscriptions or modify resources owned by
+    foundation OperatorPolicies
 
 ## Technology Stack
 
@@ -232,7 +236,7 @@ oc apply -f bootstrap/rbac/06-team-rolebindings.yaml
 
 > **Note**: `07-cluster-ns-secret-reader.yaml` is applied in step 3 — it
 > references cluster namespaces that ACM creates when ManagedCluster resources
-> are applied. For RBAC verification, see [step 5](#5-verify-rbac-scoping-after-import).
+> are applied. For RBAC verification, see [step 6](#6-verify-rbac-scoping-after-import).
 
 ### 3. Apply bootstrap manifests on the hub (foundation-admin does this)
 
@@ -255,9 +259,47 @@ oc apply -f bootstrap/rbac/07-cluster-ns-secret-reader.yaml
 ```
 
 > This completes RBAC setup from step 2c. For verification, see
-> [step 5](#5-verify-rbac-scoping-after-import).
+> [step 6](#6-verify-rbac-scoping-after-import).
 
-### 4. Team members: extract import secrets and apply on spokes
+### 4. Install Gatekeeper and deploy guardrails
+
+Foundation admin installs OPA Gatekeeper on the hub and deploys the
+ConstraintTemplates and Constraints that prevent teams from interfering with
+foundation-managed resources.
+
+```bash
+# Install Gatekeeper Operator
+oc apply -f bootstrap/gatekeeper/01-subscription.yaml
+
+# Wait for the operator CSV to reach Succeeded
+oc get csv -n openshift-operators -w
+
+# Create the Gatekeeper instance
+oc apply -f bootstrap/gatekeeper/02-gatekeeper.yaml
+
+# Wait for pods to be ready
+oc get pods -n openshift-gatekeeper-system -w
+
+# Deploy ConstraintTemplates (wait a few seconds for CRDs to register)
+oc apply -f foundation/guardrails/constraint-templates/
+sleep 10
+
+# Deploy Constraints
+oc apply -f foundation/guardrails/constraints/
+```
+
+Two guardrails are enforced:
+
+| Constraint | Blocks |
+|---|---|
+| `block-team-foundation-ns` | Policies or Applications in team namespaces that target protected namespaces (`openshift-gitops`, `openshift-logging`, `loki`, `open-cluster-management*`) |
+| `block-team-foundation-ops` | Policies in team namespaces wrapping an OperatorPolicy that references a foundation operator (`loki-operator`, `tempo-operator`) |
+
+Foundation's own resources in `openshift-gitops` are **not checked** — the
+constraints only match resources in team namespaces (`mortgage-gitops`,
+`insurance-gitops`).
+
+### 5. Team members: extract import secrets and apply on spokes
 
 Each team member logs into the hub with their own credentials, reads the import
 secret for their cluster, then applies it on the spoke using their cluster-admin
@@ -306,7 +348,7 @@ oc apply -f /tmp/parasol-sno-crds.yaml
 oc apply -f /tmp/parasol-sno-import.yaml
 ```
 
-### 5. Verify RBAC scoping (after import)
+### 6. Verify RBAC scoping (after import)
 
 > This step requires clusters to be imported (step 4) so that import secrets
 > exist and `clusterview` returns results.
@@ -342,7 +384,7 @@ oc get managedclustersets.clusterview.open-cluster-management.io
 # Expected: insurance
 ```
 
-### 6. Non-OCP spokes: manual pull secret (fallback)
+### 7. Non-OCP spokes: manual pull secret (fallback)
 
 > **Note**: this section is only needed if step 1 (`imagePullSecret` on
 > `MultiClusterHub`) was **not** done before importing the cluster.
@@ -373,7 +415,7 @@ Repeat for **every non-OCP cluster** — replace `kind-local` and `kind-kind` wi
 the appropriate cluster name and kubectl context. OCP clusters don't need this
 because the node's global pull secret already covers `registry.redhat.io`.
 
-### 7. ArgoCD Agent setup (foundation-admin does this)
+### 8. ArgoCD Agent setup (foundation-admin does this)
 
 The ArgoCD Agent (Technology Preview) implements the **advanced pull model**: a principal
 runs on the hub and agents run on each spoke. Spokes pull application definitions from
@@ -526,7 +568,7 @@ Teams create ApplicationSets in their own namespace (`mortgage-gitops`, `insuran
 referencing their team's AppProject. The principal propagates the project to spoke agents,
 which enforce destination restrictions locally.
 
-#### Step 7a — Install OpenShift GitOps operator
+#### Step 8a — Install OpenShift GitOps operator
 
 ```bash
 oc login $HUB_API -u foundation-admin -p 'foundation123' --insecure-skip-tls-verify
@@ -556,7 +598,7 @@ oc get argocd -n openshift-gitops
 > Ref: [Configuring subscriptions and resources for Argo CD agent](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/gitops/index#configure-subs-resources-gitops)
 
 
-#### Step 7b — Replace ArgoCD CR with Agent mode
+#### Step 8b — Replace ArgoCD CR with Agent mode
 
 ```bash
 oc apply -f bootstrap/argocd-agent/02-argocd-agent.yaml
@@ -565,17 +607,17 @@ oc apply -f bootstrap/argocd-agent/02-argocd-agent.yaml
 This disables the traditional ArgoCD controller and enables the **agent principal**
 with mTLS authentication and an OpenShift Route for spoke connectivity.
 
-The principal pod will CrashLoopBackOff until step 7d creates the TLS certificates.
+The principal pod will CrashLoopBackOff until step 8d creates the TLS certificates.
 
 > Ref: [Configuring subscriptions and resources for Argo CD agent](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/gitops/index#configure-subs-resources-gitops)
 
-#### Step 7c — Apply per-team AppProjects
+#### Step 8c — Apply per-team AppProjects
 
 ```bash
 oc apply -f bootstrap/argocd-agent/03-appproject.yaml
 ```
 
-#### Step 7d — Enable GitOps addon with Agent on all spokes
+#### Step 8d — Enable GitOps addon with Agent on all spokes
 
 ```bash
 # Bind global MCS to openshift-gitops (so Placement can find all clusters)
@@ -597,7 +639,7 @@ The `GitOpsCluster` controller will:
 
 > Ref: [Enabling GitOps addon with ArgoCD Agent](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/gitops/index#enabling-gitops-addon-argocd-agent)
 
-#### Step 7e — Verify
+#### Step 8e — Verify
 
 > **TODO**: automate as `scripts/verify-agent.sh` alongside the RBAC tests.
 

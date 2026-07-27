@@ -1,0 +1,31 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sblockfoundationoperators
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sBlockFoundationOperators
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            protectedOperators:
+              type: array
+              items:
+                type: string
+              description: "Operator subscription names that teams cannot target"
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sblockfoundationoperators
+
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Policy"
+          tmpl := input.review.object.spec["policy-templates"][_]
+          tmpl.objectDefinition.kind == "OperatorPolicy"
+          name := tmpl.objectDefinition.spec.subscription.name
+          name == input.parameters.protectedOperators[_]
+          msg := sprintf("OperatorPolicy targets foundation operator '%v'", [name])
+        }

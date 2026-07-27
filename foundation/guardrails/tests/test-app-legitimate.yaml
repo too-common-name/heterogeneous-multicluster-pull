@@ -1,0 +1,16 @@
+# EXPECTED: ALLOWED
+# A team deploys an ArgoCD Application to their own namespace
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test-legitimate-app
+  namespace: mortgage-gitops
+spec:
+  project: mortgage
+  source:
+    repoURL: https://github.com/example/repo.git
+    targetRevision: main
+    path: .
+  destination:
+    name: insolvency-check-sno
+    namespace: my-team-namespace

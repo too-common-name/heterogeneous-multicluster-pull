@@ -1,0 +1,23 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sBlockFoundationNamespaces
+metadata:
+  name: block-team-foundation-ns
+spec:
+  match:
+    kinds:
+      - apiGroups: ["policy.open-cluster-management.io"]
+        kinds: ["Policy"]
+      - apiGroups: ["argoproj.io"]
+        kinds: ["Application"]
+    namespaces:
+      - mortgage-gitops
+      - insurance-gitops
+  parameters:
+    protectedNamespaces:
+      - openshift-gitops
+      - openshift-logging
+      - kube-system
+      - kube-public
+      - loki
+    protectedPrefixes:
+      - open-cluster-management

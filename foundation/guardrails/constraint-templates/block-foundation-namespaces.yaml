@@ -1,0 +1,76 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sblockfoundationnamespaces
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sBlockFoundationNamespaces
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            protectedNamespaces:
+              type: array
+              items:
+                type: string
+              description: "Exact namespace names that teams cannot target"
+            protectedPrefixes:
+              type: array
+              items:
+                type: string
+              description: "Namespace prefixes that teams cannot target (e.g. 'open-cluster-management' matches 'open-cluster-management-hub')"
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sblockfoundationnamespaces
+
+        is_protected(ns) {
+          protected := input.parameters.protectedNamespaces[_]
+          ns == protected
+        }
+
+        is_protected(ns) {
+          prefix := input.parameters.protectedPrefixes[_]
+          startswith(ns, prefix)
+        }
+
+        # Rule 1: ArgoCD Application — spec.destination.namespace
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Application"
+          ns := input.review.object.spec.destination.namespace
+          is_protected(ns)
+          msg := sprintf("Application targets protected namespace '%v'", [ns])
+        }
+
+        # Rule 2: ConfigurationPolicy inside a Policy — namespaceSelector.include
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Policy"
+          tmpl := input.review.object.spec["policy-templates"][_]
+          tmpl.objectDefinition.kind == "ConfigurationPolicy"
+          ns := tmpl.objectDefinition.spec.namespaceSelector.include[_]
+          is_protected(ns)
+          msg := sprintf("ConfigurationPolicy targets protected namespace '%v'", [ns])
+        }
+
+        # Rule 3: ConfigurationPolicy inside a Policy — object-templates namespace
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Policy"
+          tmpl := input.review.object.spec["policy-templates"][_]
+          tmpl.objectDefinition.kind == "ConfigurationPolicy"
+          obj := tmpl.objectDefinition.spec["object-templates"][_]
+          ns := obj.objectDefinition.metadata.namespace
+          is_protected(ns)
+          msg := sprintf("ConfigurationPolicy targets protected namespace '%v' in object-templates", [ns])
+        }
+
+        # Rule 4: OperatorPolicy inside a Policy — subscription.namespace
+        violation[{"msg": msg}] {
+          input.review.object.kind == "Policy"
+          tmpl := input.review.object.spec["policy-templates"][_]
+          tmpl.objectDefinition.kind == "OperatorPolicy"
+          ns := tmpl.objectDefinition.spec.subscription.namespace
+          is_protected(ns)
+          msg := sprintf("OperatorPolicy targets protected namespace '%v'", [ns])
+        }
