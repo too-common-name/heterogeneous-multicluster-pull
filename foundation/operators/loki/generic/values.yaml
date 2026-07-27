@@ -42,6 +42,15 @@ singleBinary:
           name: loki-s3
           key: access_key_secret
 
+read:
+  replicas: 0
+
+write:
+  replicas: 0
+
+backend:
+  replicas: 0
+
 minio:
   enabled: false
 
